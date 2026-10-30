@@ -98,6 +98,10 @@ globalThis.window = {
   removeEventListener: (type, fn) => {
     listeners.get(type)?.delete(fn)
   },
+  dispatchEvent: (event) => {
+    for (const fn of listeners.get(event.type) ?? []) fn(event)
+    return true
+  },
   setInterval: () => 0,
   clearInterval: () => undefined,
   setTimeout: () => 0,
@@ -105,6 +109,11 @@ globalThis.window = {
 }
 
 let styles = []
+globalThis.Event = class Event {
+  constructor(type) {
+    this.type = type
+  }
+}
 globalThis.document = {
   createElement(tag) {
     return { tag, textContent: '', setAttribute() {}, remove() {}, appended: false }
@@ -170,14 +179,13 @@ function render(node) {
 }
 
 /* ---------------- 跑起来 ---------------- */
-const clientPath = 'D:/deepseek工作区/dsh-cookie-meter/client.js'
+const clientPath = new URL('../client.js', import.meta.url)
 const source = fs.readFileSync(clientPath, 'utf8')
 new Function(source)()
 
 console.log('plugin id =', plugin.id, '| inject =', JSON.stringify(plugin.inject))
 
-let Component
-let overlayMeta
+const registered = new Map()
 plugin.apply({
   effect(cb) {
     const dispose = cb()
@@ -189,12 +197,16 @@ plugin.apply({
       cb()
     },
     register(meta, comp) {
-      overlayMeta = meta
-      Component = comp
+      registered.set(meta.name, { meta, comp })
       return () => undefined
     },
   },
 })
+
+const overlayEntry = registered.get('shell.overlay')
+const tabEntry = registered.get('conversation.session.header.utilities')
+let overlayMeta = overlayEntry && overlayEntry.meta
+let Component = overlayEntry && overlayEntry.comp
 
 console.log('style injected =', styles.length, '| overlay =', JSON.stringify(overlayMeta))
 
@@ -222,4 +234,27 @@ console.log('百分比节点 =', pctMatch && pctMatch[1].replace(/<[^>]+>/g, '')
 console.log('红色提示 =', loaded.includes('#FF4D5E') ? '是' : '否')
 console.log('按钮文案 =', (loaded.match(/class="dcm-btn[^"]*"[^>]*>([^<]+)</) ?? [])[1])
 console.log('状态行 =', (loaded.match(/class="dcm-status">[\s\S]*?<span>([^<]+)<\/span>/) ?? [])[1])
-console.log('\nSMOKE OK =', initial.length > 0 && loaded.includes('dcm-pct'))
+
+/* ---------------- 顶栏按钮 ---------------- */
+if (tabEntry) {
+  Component = tabEntry.comp
+  paint('顶栏按钮（挂载）')
+  await new Promise((r) => setTimeout(r, 60))
+  const tabLoaded = paint('顶栏按钮（拉取完成）')
+  console.log('顶栏按钮文案 =', (tabLoaded.match(/>([^<>]*鲸[^<>]*)</) ?? [])[1])
+  console.log('顶栏按钮高亮 =', tabLoaded.includes('dcm-tab-btn-on') ? '是' : '否')
+
+  resetHooks()
+  const tabNode = Component()
+  console.log('顶栏按钮 onClick =', typeof tabNode.props.onClick === 'function' ? '有' : '无')
+  tabNode.props.onClick()
+  console.log('点一下后 hidden 键 =', store.get('dsh.cookie-meter.hidden') ?? '(已清)')
+  console.log('dcm:hide 监听数 =', (listeners.get('dcm:hide') ?? new Set()).size)
+
+  const ok = initial.length > 0 && loaded.includes('dcm-pct') && tabLoaded.includes('%') && store.get('dsh.cookie-meter.hidden') === '1'
+  console.log('\nSMOKE OK =', ok)
+  process.exitCode = ok ? 0 : 1
+} else {
+  console.log('\n未注册顶栏按钮（conversation.session.header.utilities）')
+  console.log('\nSMOKE OK =', initial.length > 0 && loaded.includes('dcm-pct'))
+}

@@ -1,6 +1,6 @@
 import { pathToFileURL } from 'node:url'
 
-const entry = pathToFileURL('D:/deepseek工作区/dsh-cookie-meter/index.js').href
+const entry = new URL('../index.js', import.meta.url).href
 const mod = await import(entry)
 console.log('name =', mod.name, '| apply =', typeof mod.apply)
 

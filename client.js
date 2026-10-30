@@ -7,6 +7,7 @@ window.__ModuleLoader__.load({
     const API = '/dsh-cookie-meter/api'
     const POLL_MS = 30000
     const POS_KEY = 'dsh.cookie-meter.pos'
+    const HIDE_KEY = 'dsh.cookie-meter.hidden'
 
     const CSS = `
 .dcm-root{position:fixed;right:16px;bottom:16px;z-index:2147482000;pointer-events:auto;
@@ -40,6 +41,11 @@ window.__ModuleLoader__.load({
 .dcm-status{display:flex;align-items:center;gap:6px;margin-top:6px;font-size:11px;color:#B9C9E6}
 .dcm-dot{width:7px;height:7px;border-radius:50%;flex:none;display:inline-block}
 .dcm-host{display:flex;align-items:center;gap:6px;margin-top:8px;font-size:10.5px;color:#6E82A8}
+.dcm-tab-btn{border:0;background:transparent;color:inherit;font:inherit;font-size:12px;line-height:1;
+  padding:4px 6px;border-radius:6px;cursor:pointer;opacity:.75;transition:opacity .15s ease,background .15s ease}
+.dcm-tab-btn:hover{opacity:1;background:rgba(120,150,220,.18)}
+.dcm-tab-btn-on{opacity:1;background:rgba(77,107,254,.26);color:#fff}
+.dcm-tab-btn-on:hover{background:rgba(77,107,254,.38)}
 `
     const WARN = '#FF4D5E'
     const OK = '#33D69F'
@@ -68,6 +74,23 @@ window.__ModuleLoader__.load({
       }
     }
 
+    function readHidden() {
+      try {
+        return window.localStorage.getItem(HIDE_KEY) === '1'
+      } catch (err) {
+        return false
+      }
+    }
+
+    function saveHidden(value) {
+      try {
+        if (value) window.localStorage.setItem(HIDE_KEY, '1')
+        else window.localStorage.removeItem(HIDE_KEY)
+      } catch (err) {
+        /* 不可写就只当次生效 */
+      }
+    }
+
     function fmtK(bytes) {
       if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KiB'
       return String(bytes) + ' B'
@@ -79,6 +102,7 @@ window.__ModuleLoader__.load({
       const [phase, setPhase] = React.useState('idle') // idle | cleaned | scheduled | error
       const [note, setNote] = React.useState('')
       const [pos, setPos] = React.useState(readPos)
+      const [hidden, setHidden] = React.useState(readHidden)
       const rootRef = React.useRef(null)
       const dragRef = React.useRef(null)
       const posRef = React.useRef(pos)
@@ -137,6 +161,25 @@ window.__ModuleLoader__.load({
           window.removeEventListener('pointerup', stop)
           window.removeEventListener('pointercancel', stop)
           window.removeEventListener('resize', clampIntoView)
+        }
+      }, [])
+
+      React.useEffect(function () {
+        function show() {
+          setHidden(false)
+          saveHidden(false)
+          window.dispatchEvent(new Event('dcm:state'))
+        }
+        function hide() {
+          setHidden(true)
+          saveHidden(true)
+          window.dispatchEvent(new Event('dcm:state'))
+        }
+        window.addEventListener('dcm:show', show)
+        window.addEventListener('dcm:hide', hide)
+        return function () {
+          window.removeEventListener('dcm:show', show)
+          window.removeEventListener('dcm:hide', hide)
         }
       }, [])
 
@@ -237,6 +280,7 @@ window.__ModuleLoader__.load({
       const rootStyle = pos === null ? undefined : { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' }
 
       let statusText
+      if (hidden) return null
       if (scheduled) statusText = '已安排，下次进入时清零'
       else if (phase === 'cleaned') statusText = '已清理'
       else if (phase === 'error') statusText = '出错了'
@@ -314,6 +358,87 @@ window.__ModuleLoader__.load({
       )
     }
 
+    function CookieTab() {
+      const [open, setOpen] = React.useState(function () {
+        try {
+          return window.localStorage.getItem(HIDE_KEY) !== '1'
+        } catch (err) {
+          return true
+        }
+      })
+      const [meta, setMeta] = React.useState(null)
+
+      React.useEffect(function () {
+        function sync() {
+          try {
+            setOpen(window.localStorage.getItem(HIDE_KEY) !== '1')
+          } catch (err) {
+            /* 忽略 */
+          }
+        }
+        window.addEventListener('dcm:state', sync)
+        return function () {
+          window.removeEventListener('dcm:state', sync)
+        }
+      }, [])
+
+      React.useEffect(function () {
+        let alive = true
+        function pull() {
+          fetch(API, { credentials: 'include' })
+            .then(function (res) {
+              return res.ok ? res.json() : null
+            })
+            .then(function (body) {
+              if (alive && body !== null) setMeta(body)
+            })
+            .catch(function () {
+              /* 取不到就保持上一次的数字 */
+            })
+        }
+        pull()
+        const timer = window.setInterval(pull, POLL_MS)
+        return function () {
+          alive = false
+          window.clearInterval(timer)
+        }
+      }, [])
+
+      function toggle() {
+        const next = !open
+        try {
+          if (next) window.localStorage.removeItem(HIDE_KEY)
+          else window.localStorage.setItem(HIDE_KEY, '1')
+        } catch (err) {
+          /* 不可写就只当次生效 */
+        }
+        setOpen(next)
+        window.dispatchEvent(new Event(next ? 'dcm:show' : 'dcm:hide'))
+      }
+
+      const ok = meta !== null && meta.ok === true
+      const pct = ok ? meta.pct : NaN
+      const hot = ok && pct >= 50
+      const label = ok ? '鲸 ' + Math.round(pct * 10) / 10 + '%' : '鲸'
+      const title = ok
+        ? meta.count + ' 条 · ' + fmtK(meta.bytes) + ' / ' + fmtK(meta.maxHeader) + (open ? '（点击收起）' : '（点击打开）')
+        : open
+          ? '收起 Cookie 百分表'
+          : '打开 Cookie 百分表'
+
+      return h(
+        'button',
+        {
+          className: 'dcm-tab-btn' + (open ? ' dcm-tab-btn-on' : ''),
+          type: 'button',
+          title: title,
+          style: hot ? { color: WARN, opacity: 1 } : undefined,
+          onClick: toggle,
+        },
+        label,
+      )
+    }
+
     return {
       inject: ['slots'],
       apply(ctx) {
@@ -336,6 +461,22 @@ window.__ModuleLoader__.load({
             CookieMeter,
           )
         })
+
+        try {
+          ctx.slots.inject('conversation.session.header.utilities', function () {
+            return ctx.slots.register(
+              {
+                name: 'conversation.session.header.utilities',
+                id: 'cookie-meter-tab',
+                order: 47,
+                label: 'Cookie 百分表',
+              },
+              CookieTab,
+            )
+          })
+        } catch (err) {
+          /* 宿主没有这个插槽时只留浮窗，不影响其余功能 */
+        }
       },
     }
   },

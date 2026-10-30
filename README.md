@@ -29,6 +29,18 @@ Node 默认 `maxHeaderSize` 是 16384 字节 —— 攒到 **第 72 条**，根�
 
 浮窗可以按住标题栏拖动，位置记在 `localStorage`，刷新页面也不会跑。
 
+## 打开与收起
+
+浮窗没有关闭按钮，收起它的是**会话顶栏那个 `鲸` 按钮**（和刷新、更多在同一排工具位）：
+
+- 点一下收起浮窗，按钮亮成淡蓝，表示「正在显示」；
+- 再点一下打开，位置还是上次拖到的地方；
+- 按钮上直接带百分比（`鲸 61.2%`），过半变红 —— 不点开也知道离 431 还有多远；
+- 悬停显示完整信息：`46 条 · 10.2 KiB / 16.0 KiB（点击收起）`。
+
+收起状态记在 `localStorage` 的 `dsh.cookie-meter.hidden`，刷新、重启都记得上次是开是收。
+顶栏按钮走 `conversation.session.header.utilities` 插槽，外面套了 `try/catch`：宿主版本没有这个插槽时只少一个按钮，浮窗照常工作。
+
 ## 安装
 
 ```sh
@@ -88,6 +100,8 @@ node scripts/smoke-boot.mjs    # 启动补清理：标记存在时删库并清�
 ```
 
 `smoke-client.mjs` 自带一个极简 React 替身和假的 `__ModuleLoader__`，纯 Node 就能跑，不用建构建链。
+`smoke.mjs` 与 `smoke-client.mjs` 都用 `new URL(..., import.meta.url)` 定位入口，clone 下来在仓库根目录直接能跑；
+`smoke-boot.mjs` 需要一个本地 cookie 库当样本（路径写在脚本里），跑之前改一行即可。
 
 ## 已知限制
 
