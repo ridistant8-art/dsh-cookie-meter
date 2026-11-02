@@ -1,6 +1,6 @@
 {
   "name": "dsh-cookie-meter",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "DSH 桌面版登录 cookie 百分表：浮窗显示请求头占用百分比（过半变红），带一键清理按钮。",
   "type": "module",
   "license": "MIT",
