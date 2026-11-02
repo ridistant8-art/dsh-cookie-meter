@@ -83,6 +83,9 @@ const React = {
 const store = new Map()
 const listeners = new Map()
 
+// 便于测试"旧版本把卡片存到标题带里"这种历史脏数据
+if (process.env.SMOKE_STORED_POS !== undefined) store.set('dsh.cookie-meter.pos', process.env.SMOKE_STORED_POS)
+
 globalThis.window = {
   innerWidth: 1440,
   innerHeight: 900,
@@ -219,6 +222,8 @@ console.log('\nfetch 调用：', JSON.stringify(fetchLog))
 
 const pctMatch = loaded.match(/class="dcm-pct"[^>]*>([\s\S]*?)<\/div>/)
 console.log('百分比节点 =', pctMatch && pctMatch[1].replace(/<[^>]+>/g, ''))
+const rootStyle = (loaded.match(/class="dcm-root" style="([^"]*)"/) ?? [])[1] ?? '(默认角落)'
+console.log('浮窗位置 style =', rootStyle)
 console.log('红色提示 =', loaded.includes('#FF4D5E') ? '是' : '否')
 console.log('按钮文案 =', (loaded.match(/class="dcm-btn[^"]*"[^>]*>([^<]+)</) ?? [])[1])
 console.log('状态行 =', (loaded.match(/class="dcm-status">[\s\S]*?<span>([^<]+)<\/span>/) ?? [])[1])
