@@ -41,7 +41,7 @@ async function api(method, path, body, opts = {}) {
     'user-agent': UA,
     'x-github-api-version': '2022-11-28',
   }
-  if (body !== undefined && !opts.raw) headers['content-type'] = 'application/json'
+  if (body !== undefined) headers['content-type'] = opts.raw ? 'application/octet-stream' : 'application/json'
   const res = await fetch(opts.url ?? API + path, {
     method,
     headers,
