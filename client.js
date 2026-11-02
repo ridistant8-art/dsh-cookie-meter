@@ -7,9 +7,14 @@ window.__ModuleLoader__.load({
     const API = '/dsh-cookie-meter/api'
     const POLL_MS = 30000
     const POS_KEY = 'dsh.cookie-meter.pos'
+    // 桌面端窗口顶部有一条 -webkit-app-region:drag 的标题带，落进去就再也抓不住，
+    // 所以纵向留出 SAFE_TOP 的安全区，横向留 SAFE_GAP。
+    const SAFE_TOP = 48
+    const SAFE_GAP = 8
 
     const CSS = `
 .dcm-root{position:fixed;right:16px;bottom:16px;z-index:2147482000;pointer-events:auto;
+  -webkit-app-region:no-drag;
   font-family:inherit;font-size:12px;line-height:1.4;color:#E8EEFF}
 .dcm-card{width:250px;background:#0B1B3A;border:1px solid rgba(120,150,220,.22);border-radius:14px;
   box-shadow:0 18px 48px rgba(0,0,0,.45),0 2px 8px rgba(0,0,0,.35);overflow:hidden}
@@ -46,13 +51,24 @@ window.__ModuleLoader__.load({
     const AMBER = '#FFB020'
     const MUTED = '#8FA3C8'
 
+    /** 把坐标收进"抓得到"的区域：上方避开标题带，四周留一点边。 */
+    function clampPoint(x, y, w, h) {
+      const maxX = Math.max(SAFE_GAP, window.innerWidth - w - SAFE_GAP)
+      const maxY = Math.max(SAFE_TOP, window.innerHeight - h - SAFE_GAP)
+      return {
+        x: Math.min(Math.max(SAFE_GAP, Math.round(x)), maxX),
+        y: Math.min(Math.max(SAFE_TOP, Math.round(y)), maxY),
+      }
+    }
+
     function readPos() {
       try {
         const raw = window.localStorage.getItem(POS_KEY)
         if (raw === null) return null
         const value = JSON.parse(raw)
         if (value !== null && typeof value === 'object' && typeof value.x === 'number' && typeof value.y === 'number') {
-          return { x: value.x, y: value.y }
+          // 旧版本可能把卡片存到标题带里，读出来先夹一次，刷新即自动脱困。
+          return clampPoint(value.x, value.y, 0, 0)
         }
       } catch (err) {
         /* 隐私模式 / 脏数据：回默认位置 */
@@ -62,6 +78,10 @@ window.__ModuleLoader__.load({
 
     function savePos(value) {
       try {
+        if (value === null) {
+          window.localStorage.removeItem(POS_KEY)
+          return
+        }
         window.localStorage.setItem(POS_KEY, JSON.stringify(value))
       } catch (err) {
         /* 不可写就只当次生效 */
@@ -89,19 +109,24 @@ window.__ModuleLoader__.load({
         if (node === null) return
         const rect = node.getBoundingClientRect()
         dragRef.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top, w: rect.width, h: rect.height }
-        const start = { x: rect.left, y: rect.top }
+        const start = clampPoint(rect.left, rect.top, rect.width, rect.height)
         posRef.current = start
         setPos(start)
+      }
+
+      function resetPos() {
+        dragRef.current = null
+        posRef.current = null
+        setPos(null)
+        savePos(null)
+        setNote('位置已复位')
       }
 
       function clampIntoView() {
         const node = rootRef.current
         if (posRef.current === null || node === null) return
         const rect = node.getBoundingClientRect()
-        const next = {
-          x: Math.min(Math.max(0, Math.round(posRef.current.x)), Math.max(0, window.innerWidth - rect.width)),
-          y: Math.min(Math.max(0, Math.round(posRef.current.y)), Math.max(0, window.innerHeight - rect.height)),
-        }
+        const next = clampPoint(posRef.current.x, posRef.current.y, rect.width, rect.height)
         if (next.x === posRef.current.x && next.y === posRef.current.y) return
         posRef.current = next
         setPos(next)
@@ -109,17 +134,14 @@ window.__ModuleLoader__.load({
       }
 
       React.useEffect(function () {
+        clampIntoView()
+      }, [])
+
+      React.useEffect(function () {
         function move(event) {
           const drag = dragRef.current
           if (drag === null) return
-          const next = {
-            x: Math.round(
-              Math.min(Math.max(0, event.clientX - drag.dx), Math.max(0, window.innerWidth - drag.w)),
-            ),
-            y: Math.round(
-              Math.min(Math.max(0, event.clientY - drag.dy), Math.max(0, window.innerHeight - drag.h)),
-            ),
-          }
+          const next = clampPoint(event.clientX - drag.dx, event.clientY - drag.dy, drag.w, drag.h)
           posRef.current = next
           setPos(next)
         }
@@ -255,7 +277,7 @@ window.__ModuleLoader__.load({
           { className: 'dcm-card' + (scheduled ? ' dcm-armed' : '') },
           h(
             'div',
-            { className: 'dcm-head', onPointerDown: beginDrag, title: '按住可拖动' },
+            { className: 'dcm-head', onPointerDown: beginDrag, onDoubleClick: resetPos, title: '按住可拖动 · 双击复位' },
             h('div', { className: 'dcm-mark' }, '鲸'),
             h('div', { className: 'dcm-title' }, 'Cookie 百分表'),
             h(
